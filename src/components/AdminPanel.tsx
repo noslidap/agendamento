@@ -21,9 +21,11 @@ import {
   BarChart3 
 } from "lucide-react";
 import { HorariosConfig } from "./HorariosConfig";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface AgendamentoType {
-  id: number;
+  id: string;
   nome: string;
   telefone: string;
   email: string;
@@ -37,38 +39,54 @@ interface AdminPanelProps {
 }
 
 export const AdminPanel = ({ onLogout }: AdminPanelProps) => {
-  const [agendamentos, setAgendamentos] = useState<AgendamentoType[]>([]);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    carregarAgendamentos();
-  }, []);
+  // Buscar agendamentos do Supabase
+  const { data: agendamentos = [], isLoading } = useQuery({
+    queryKey: ['agendamentos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('*')
+        .order('data', { ascending: true })
+        .order('horario', { ascending: true });
 
-  const carregarAgendamentos = () => {
-    const agendamentosSalvos = JSON.parse(localStorage.getItem("agendamentos") || "[]");
-    // Ordenar por data e horário
-    agendamentosSalvos.sort((a: AgendamentoType, b: AgendamentoType) => {
-      const dateA = new Date(a.data + " " + a.horario);
-      const dateB = new Date(b.data + " " + b.horario);
-      return dateA.getTime() - dateB.getTime();
-    });
-    setAgendamentos(agendamentosSalvos);
-  };
+      if (error) {
+        console.error('Erro ao buscar agendamentos:', error);
+        return [];
+      }
 
-  const atualizarStatus = (id: number, novoStatus: "confirmado" | "cancelado") => {
-    const agendamentosAtualizados = agendamentos.map(agendamento =>
-      agendamento.id === id 
-        ? { ...agendamento, status: novoStatus }
-        : agendamento
-    );
-    
-    setAgendamentos(agendamentosAtualizados);
-    localStorage.setItem("agendamentos", JSON.stringify(agendamentosAtualizados));
-    
-    toast({
-      title: "Status atualizado!",
-      description: `Agendamento ${novoStatus === "confirmado" ? "confirmado" : "cancelado"} com sucesso.`,
-    });
+      return data;
+    }
+  });
+
+  const atualizarStatus = async (id: string, novoStatus: "confirmado" | "cancelado") => {
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .update({ status: novoStatus })
+        .eq('id', id);
+
+      if (error) {
+        throw error;
+      }
+
+      // Invalidar e recarregar os dados
+      queryClient.invalidateQueries({ queryKey: ['agendamentos'] });
+      
+      toast({
+        title: "Status atualizado!",
+        description: `Agendamento ${novoStatus === "confirmado" ? "confirmado" : "cancelado"} com sucesso.`,
+      });
+    } catch (error) {
+      console.error('Erro ao atualizar status:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao atualizar status. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -192,7 +210,11 @@ export const AdminPanel = ({ onLogout }: AdminPanelProps) => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {agendamentos.length === 0 ? (
+                {isLoading ? (
+                  <p className="text-center text-gray-300 py-8">
+                    Carregando agendamentos...
+                  </p>
+                ) : agendamentos.length === 0 ? (
                   <p className="text-center text-gray-300 py-8">
                     Nenhum agendamento encontrado.
                   </p>

@@ -9,9 +9,10 @@ import { Badge } from "@/components/ui/badge";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, Clock, User, Phone } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AgendamentoType {
-  id: number;
+  id: string;
   nome: string;
   telefone: string;
   email: string;
@@ -29,17 +30,34 @@ export const ConsultaModal = ({ open, onOpenChange }: ConsultaModalProps) => {
   const [telefone, setTelefone] = useState("");
   const [agendamentos, setAgendamentos] = useState<AgendamentoType[]>([]);
   const [mostrarResultados, setMostrarResultados] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const buscarAgendamentos = () => {
+  const buscarAgendamentos = async () => {
     if (!telefone) return;
     
-    const todosAgendamentos = JSON.parse(localStorage.getItem("agendamentos") || "[]");
-    const agendamentosFiltrados = todosAgendamentos.filter(
-      (agendamento: AgendamentoType) => agendamento.telefone === telefone
-    );
+    setIsLoading(true);
     
-    setAgendamentos(agendamentosFiltrados);
-    setMostrarResultados(true);
+    try {
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('*')
+        .eq('telefone', telefone)
+        .order('data', { ascending: true })
+        .order('horario', { ascending: true });
+
+      if (error) {
+        throw error;
+      }
+
+      setAgendamentos(data || []);
+      setMostrarResultados(true);
+    } catch (error) {
+      console.error('Erro ao buscar agendamentos:', error);
+      setAgendamentos([]);
+      setMostrarResultados(true);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -97,10 +115,10 @@ export const ConsultaModal = ({ open, onOpenChange }: ConsultaModalProps) => {
             <Button 
               onClick={buscarAgendamentos}
               className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
-              disabled={!telefone}
+              disabled={!telefone || isLoading}
             >
               <Phone className="mr-2 h-4 w-4" />
-              Buscar Agendamentos
+              {isLoading ? "Buscando..." : "Buscar Agendamentos"}
             </Button>
           </div>
           

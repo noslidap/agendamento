@@ -7,36 +7,34 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Trash2, Clock } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const HorariosConfig = () => {
-  const [horarios, setHorarios] = useState<string[]>([]);
   const [novoHorario, setNovoHorario] = useState("");
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    carregarHorarios();
-  }, []);
+  // Buscar horários do Supabase
+  const { data: horarios = [] } = useQuery({
+    queryKey: ['horarios-config'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('horarios_disponiveis')
+        .select('*')
+        .eq('ativo', true)
+        .order('horario');
+      
+      if (error) {
+        console.error('Erro ao buscar horários:', error);
+        return [];
+      }
+      
+      return data;
+    }
+  });
 
-  const carregarHorarios = () => {
-    const horariosDefault = [
-      "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-      "11:00", "11:30", "14:00", "14:30", "15:00", "15:30",
-      "16:00", "16:30", "17:00", "17:30", "18:00"
-    ];
-    
-    const horariosSalvos = JSON.parse(
-      localStorage.getItem("horariosDisponiveis") || JSON.stringify(horariosDefault)
-    );
-    
-    setHorarios(horariosSalvos.sort());
-  };
-
-  const salvarHorarios = (novosHorarios: string[]) => {
-    localStorage.setItem("horariosDisponiveis", JSON.stringify(novosHorarios));
-    setHorarios(novosHorarios.sort());
-  };
-
-  const adicionarHorario = () => {
+  const adicionarHorario = async () => {
     if (!novoHorario) {
       toast({
         title: "Erro",
@@ -57,7 +55,8 @@ export const HorariosConfig = () => {
       return;
     }
 
-    if (horarios.includes(novoHorario)) {
+    // Verificar se já existe
+    if (horarios.some(h => h.horario === novoHorario)) {
       toast({
         title: "Erro",
         description: "Este horário já existe.",
@@ -66,39 +65,100 @@ export const HorariosConfig = () => {
       return;
     }
 
-    const novosHorarios = [...horarios, novoHorario];
-    salvarHorarios(novosHorarios);
-    setNovoHorario("");
-    
-    toast({
-      title: "Sucesso!",
-      description: "Horário adicionado com sucesso.",
-    });
+    try {
+      const { error } = await supabase
+        .from('horarios_disponiveis')
+        .insert([{ horario: novoHorario }]);
+
+      if (error) {
+        throw error;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['horarios-config'] });
+      queryClient.invalidateQueries({ queryKey: ['horarios-disponiveis'] });
+      setNovoHorario("");
+      
+      toast({
+        title: "Sucesso!",
+        description: "Horário adicionado com sucesso.",
+      });
+    } catch (error) {
+      console.error('Erro ao adicionar horário:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao adicionar horário. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const removerHorario = (horario: string) => {
-    const novosHorarios = horarios.filter(h => h !== horario);
-    salvarHorarios(novosHorarios);
-    
-    toast({
-      title: "Sucesso!",
-      description: "Horário removido com sucesso.",
-    });
+  const removerHorario = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from('horarios_disponiveis')
+        .update({ ativo: false })
+        .eq('id', id);
+
+      if (error) {
+        throw error;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['horarios-config'] });
+      queryClient.invalidateQueries({ queryKey: ['horarios-disponiveis'] });
+      
+      toast({
+        title: "Sucesso!",
+        description: "Horário removido com sucesso.",
+      });
+    } catch (error) {
+      console.error('Erro ao remover horário:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao remover horário. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
-  const resetarHorarios = () => {
-    const horariosDefault = [
-      "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-      "11:00", "11:30", "14:00", "14:30", "15:00", "15:30",
-      "16:00", "16:30", "17:00", "17:30", "18:00"
-    ];
-    
-    salvarHorarios(horariosDefault);
-    
-    toast({
-      title: "Sucesso!",
-      description: "Horários resetados para o padrão.",
-    });
+  const resetarHorarios = async () => {
+    try {
+      // Desativar todos os horários existentes
+      await supabase
+        .from('horarios_disponiveis')
+        .update({ ativo: false })
+        .eq('ativo', true);
+
+      // Horários padrão
+      const horariosDefault = [
+        "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
+        "11:00", "11:30", "14:00", "14:30", "15:00", "15:30",
+        "16:00", "16:30", "17:00", "17:30", "18:00"
+      ];
+
+      // Inserir os horários padrão
+      const { error } = await supabase
+        .from('horarios_disponiveis')
+        .insert(horariosDefault.map(horario => ({ horario })));
+
+      if (error) {
+        throw error;
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['horarios-config'] });
+      queryClient.invalidateQueries({ queryKey: ['horarios-disponiveis'] });
+      
+      toast({
+        title: "Sucesso!",
+        description: "Horários resetados para o padrão.",
+      });
+    } catch (error) {
+      console.error('Erro ao resetar horários:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao resetar horários. Tente novamente.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -164,16 +224,16 @@ export const HorariosConfig = () => {
               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                 {horarios.map((horario) => (
                   <div
-                    key={horario}
+                    key={horario.id}
                     className="flex items-center justify-between bg-white/5 rounded-lg p-2 border border-white/10"
                   >
                     <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                      {horario}
+                      {horario.horario}
                     </Badge>
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => removerHorario(horario)}
+                      onClick={() => removerHorario(horario.id)}
                       className="h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
                     >
                       <Trash2 className="h-3 w-3" />

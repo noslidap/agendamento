@@ -10,6 +10,8 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Check } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
 
 interface AgendamentoModalProps {
   open: boolean;
@@ -23,16 +25,29 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Horários disponíveis (simulando dados do barbeiro)
-  const horariosDisponiveis = [
-    "08:00", "08:30", "09:00", "09:30", "10:00", "10:30",
-    "11:00", "11:30", "14:00", "14:30", "15:00", "15:30",
-    "16:00", "16:30", "17:00", "17:30", "18:00"
-  ];
+  // Buscar horários disponíveis do Supabase
+  const { data: horariosDisponiveis = [] } = useQuery({
+    queryKey: ['horarios-disponiveis'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('horarios_disponiveis')
+        .select('horario')
+        .eq('ativo', true)
+        .order('horario');
+      
+      if (error) {
+        console.error('Erro ao buscar horários:', error);
+        return [];
+      }
+      
+      return data.map(item => item.horario);
+    }
+  });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!nome || !telefone || !selectedDate || !selectedTime) {
@@ -44,29 +59,44 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
       return;
     }
 
-    // Simular salvamento no banco de dados
-    const agendamento = {
-      id: Date.now(),
-      nome,
-      telefone,
-      email,
-      data: selectedDate,
-      horario: selectedTime,
-      status: "pendente"
-    };
+    setIsLoading(true);
 
-    // Salvar no localStorage (simular banco de dados)
-    const agendamentos = JSON.parse(localStorage.getItem("agendamentos") || "[]");
-    agendamentos.push(agendamento);
-    localStorage.setItem("agendamentos", JSON.stringify(agendamentos));
+    try {
+      const { error } = await supabase
+        .from('agendamentos')
+        .insert([
+          {
+            nome,
+            telefone,
+            email: email || null,
+            data: format(selectedDate, 'yyyy-MM-dd'),
+            horario: selectedTime,
+            status: 'pendente'
+          }
+        ]);
 
-    setIsSuccess(true);
-    
-    setTimeout(() => {
-      resetForm();
-      setIsSuccess(false);
-      onOpenChange(false);
-    }, 3000);
+      if (error) {
+        throw error;
+      }
+
+      setIsSuccess(true);
+      
+      setTimeout(() => {
+        resetForm();
+        setIsSuccess(false);
+        onOpenChange(false);
+      }, 3000);
+
+    } catch (error) {
+      console.error('Erro ao criar agendamento:', error);
+      toast({
+        title: "Erro",
+        description: "Erro ao criar agendamento. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -194,14 +224,16 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
               variant="outline" 
               onClick={handleClose}
               className="flex-1"
+              disabled={isLoading}
             >
               Cancelar
             </Button>
             <Button 
               type="submit" 
               className="flex-1 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700"
+              disabled={isLoading}
             >
-              Confirmar Agendamento
+              {isLoading ? "Agendando..." : "Confirmar Agendamento"}
             </Button>
           </div>
         </form>

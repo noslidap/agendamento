@@ -9,7 +9,63 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      agendamentos: {
+        Row: {
+          created_at: string
+          data: string
+          email: string | null
+          horario: string
+          id: string
+          nome: string
+          status: string
+          telefone: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          email?: string | null
+          horario: string
+          id?: string
+          nome: string
+          status?: string
+          telefone: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          email?: string | null
+          horario?: string
+          id?: string
+          nome?: string
+          status?: string
+          telefone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      horarios_disponiveis: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          horario: string
+          id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          horario: string
+          id?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          horario?: string
+          id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
