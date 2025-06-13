@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -10,16 +9,10 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Calendar, Clock, User, Phone } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { Tables } from "@/integrations/supabase/types";
 
-interface AgendamentoType {
-  id: string;
-  nome: string;
-  telefone: string;
-  email: string;
-  data: string;
-  horario: string;
-  status: "pendente" | "confirmado" | "cancelado";
-}
+// Use o tipo do Supabase diretamente
+type AgendamentoType = Tables<'agendamentos'>;
 
 interface ConsultaModalProps {
   open: boolean;
