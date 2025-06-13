@@ -17,6 +17,8 @@ export type Database = {
           horario: string
           id: string
           nome: string
+          observacoes: string | null
+          servico_id: string | null
           status: string
           telefone: string
           updated_at: string
@@ -28,6 +30,8 @@ export type Database = {
           horario: string
           id?: string
           nome: string
+          observacoes?: string | null
+          servico_id?: string | null
           status?: string
           telefone: string
           updated_at?: string
@@ -39,8 +43,48 @@ export type Database = {
           horario?: string
           id?: string
           nome?: string
+          observacoes?: string | null
+          servico_id?: string | null
           status?: string
           telefone?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agendamentos_servico_id_fkey"
+            columns: ["servico_id"]
+            isOneToOne: false
+            referencedRelation: "servicos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      anuncios: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          id: string
+          imagem_url: string | null
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          imagem_url?: string | null
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          imagem_url?: string | null
+          titulo?: string
           updated_at?: string
         }
         Relationships: []
@@ -63,6 +107,39 @@ export type Database = {
           created_at?: string
           horario?: string
           id?: string
+        }
+        Relationships: []
+      }
+      servicos: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          duracao_minutos: number
+          id: string
+          nome: string
+          preco: number
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          duracao_minutos?: number
+          id?: string
+          nome: string
+          preco: number
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          duracao_minutos?: number
+          id?: string
+          nome?: string
+          preco?: number
+          updated_at?: string
         }
         Relationships: []
       }

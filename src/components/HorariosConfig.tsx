@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -186,13 +186,13 @@ export const HorariosConfig = () => {
                   value={novoHorario}
                   onChange={(e) => setNovoHorario(e.target.value)}
                   placeholder="14:30"
-                  className="bg-white/20 border-white/30 text-white placeholder-gray-300"
+                  className="bg-white/20 border-white/30 text-white placeholder-gray-300 focus:border-white/50"
                 />
               </div>
               <div className="flex items-end">
                 <Button
                   onClick={adicionarHorario}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -210,7 +210,7 @@ export const HorariosConfig = () => {
                 variant="outline"
                 size="sm"
                 onClick={resetarHorarios}
-                className="border-white/30 text-white hover:bg-white/20"
+                className="border-white/30 text-white hover:bg-white/20 hover:text-white"
               >
                 Resetar para Padrão
               </Button>

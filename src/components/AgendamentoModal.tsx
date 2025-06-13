@@ -12,6 +12,7 @@ import { ptBR } from "date-fns/locale";
 import { Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
+import { useTelefoneFormat } from "@/hooks/useTelefoneFormat";
 
 interface AgendamentoModalProps {
   open: boolean;
@@ -20,15 +21,41 @@ interface AgendamentoModalProps {
 
 export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) => {
   const [nome, setNome] = useState("");
-  const [telefone, setTelefone] = useState("");
   const [email, setEmail] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date>();
   const [selectedTime, setSelectedTime] = useState("");
+  const [selectedService, setSelectedService] = useState("");
   const [isSuccess, setIsSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
-  // Buscar horários disponíveis do Supabase
+  const {
+    telefone,
+    handleTelefoneChange,
+    getTelefoneNumbers,
+    isValidTelefone
+  } = useTelefoneFormat();
+
+  // Buscar serviços disponíveis
+  const { data: servicos = [] } = useQuery({
+    queryKey: ['servicos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('servicos')
+        .select('*')
+        .eq('ativo', true)
+        .order('nome');
+      
+      if (error) {
+        console.error('Erro ao buscar serviços:', error);
+        return [];
+      }
+      
+      return data;
+    }
+  });
+
+  // Buscar horários disponíveis
   const { data: horariosDisponiveis = [] } = useQuery({
     queryKey: ['horarios-disponiveis'],
     queryFn: async () => {
@@ -47,13 +74,50 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
     }
   });
 
+  // Buscar agendamentos existentes para verificar disponibilidade
+  const { data: agendamentosExistentes = [] } = useQuery({
+    queryKey: ['agendamentos-existentes', selectedDate],
+    queryFn: async () => {
+      if (!selectedDate) return [];
+      
+      const { data, error } = await supabase
+        .from('agendamentos')
+        .select('horario')
+        .eq('data', format(selectedDate, 'yyyy-MM-dd'))
+        .neq('status', 'cancelado');
+      
+      if (error) {
+        console.error('Erro ao buscar agendamentos existentes:', error);
+        return [];
+      }
+      
+      return data.map(item => item.horario);
+    },
+    enabled: !!selectedDate
+  });
+
+  // Filtrar horários disponíveis baseado nos agendamentos existentes
+  const horariosLivres = horariosDisponiveis.filter(
+    horario => !agendamentosExistentes.includes(horario)
+  );
+
+  const servicoSelecionado = servicos.find(s => s.id === selectedService);
+
+  const isFormValid = () => {
+    return nome.trim() !== "" && 
+           isValidTelefone() && 
+           selectedDate && 
+           selectedTime !== "" && 
+           selectedService !== "";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!nome || !telefone || !selectedDate || !selectedTime) {
+    if (!isFormValid()) {
       toast({
         title: "Erro",
-        description: "Por favor, preencha todos os campos obrigatórios.",
+        description: "Por favor, preencha todos os campos obrigatórios corretamente.",
         variant: "destructive",
       });
       return;
@@ -67,16 +131,35 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
         .insert([
           {
             nome,
-            telefone,
+            telefone: getTelefoneNumbers(),
             email: email || null,
-            data: format(selectedDate, 'yyyy-MM-dd'),
+            data: format(selectedDate!, 'yyyy-MM-dd'),
             horario: selectedTime,
+            servico_id: selectedService,
             status: 'pendente'
           }
         ]);
 
       if (error) {
         throw error;
+      }
+
+      // Enviar notificação via webhook
+      try {
+        await supabase.functions.invoke('send-notification', {
+          body: {
+            nome,
+            telefone: telefone,
+            servico: servicoSelecionado?.nome || 'Serviço não identificado',
+            preco: servicoSelecionado?.preco || 0,
+            data: format(selectedDate!, "dd/MM/yyyy"),
+            horario: selectedTime
+          }
+        });
+        console.log('Notificação enviada com sucesso');
+      } catch (notificationError) {
+        console.error('Erro ao enviar notificação:', notificationError);
+        // Não falhar o agendamento se a notificação falhar
       }
 
       setIsSuccess(true);
@@ -101,10 +184,11 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
 
   const resetForm = () => {
     setNome("");
-    setTelefone("");
+    handleTelefoneChange("");
     setEmail("");
     setSelectedDate(undefined);
     setSelectedTime("");
+    setSelectedService("");
   };
 
   const handleClose = () => {
@@ -128,6 +212,15 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
               Seu agendamento foi registrado com sucesso.<br />
               O barbeiro irá confirmar seu horário em breve.
             </p>
+            {servicoSelecionado && (
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <p className="text-sm text-gray-600">
+                  <strong>Serviço:</strong> {servicoSelecionado.nome}<br />
+                  <strong>Preço:</strong> R$ {servicoSelecionado.preco.toFixed(2)}<br />
+                  <strong>Duração:</strong> {servicoSelecionado.duracao_minutos} minutos
+                </p>
+              </div>
+            )}
             <p className="text-sm text-gray-500">
               Status: <span className="font-semibold text-yellow-600">Pendente de confirmação</span>
             </p>
@@ -164,10 +257,16 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
               <Input
                 id="telefone"
                 value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
+                onChange={(e) => handleTelefoneChange(e.target.value)}
                 placeholder="(11) 99999-9999"
                 required
+                className={!isValidTelefone() && telefone ? "border-red-300" : ""}
               />
+              {telefone && !isValidTelefone() && (
+                <p className="text-red-500 text-xs">
+                  Digite um telefone válido com 11 dígitos
+                </p>
+              )}
             </div>
           </div>
           
@@ -180,6 +279,41 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seuemail@exemplo.com"
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Escolha o Serviço *</Label>
+            <Select value={selectedService} onValueChange={setSelectedService}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione um serviço" />
+              </SelectTrigger>
+              <SelectContent>
+                {servicos.map((servico) => (
+                  <SelectItem key={servico.id} value={servico.id}>
+                    <div className="flex justify-between items-center w-full">
+                      <span>{servico.nome}</span>
+                      <span className="ml-2 text-green-600 font-semibold">
+                        R$ {servico.preco.toFixed(2)}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {servicoSelecionado && (
+              <div className="bg-blue-50 rounded-lg p-3 mt-2">
+                <p className="text-sm text-blue-800">
+                  <strong>{servicoSelecionado.nome}</strong><br />
+                  {servicoSelecionado.descricao && (
+                    <>
+                      {servicoSelecionado.descricao}<br />
+                    </>
+                  )}
+                  <strong>Preço:</strong> R$ {servicoSelecionado.preco.toFixed(2)} | 
+                  <strong> Duração:</strong> {servicoSelecionado.duracao_minutos} min
+                </p>
+              </div>
+            )}
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -197,22 +331,40 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
             
             <div className="space-y-2">
               <Label>Escolha o Horário *</Label>
-              <Select value={selectedTime} onValueChange={setSelectedTime}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um horário" />
-                </SelectTrigger>
-                <SelectContent>
-                  {horariosDisponiveis.map((horario) => (
-                    <SelectItem key={horario} value={horario}>
-                      {horario}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {selectedDate ? (
+                <Select value={selectedTime} onValueChange={setSelectedTime}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um horário" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {horariosLivres.length === 0 ? (
+                      <div className="p-2 text-center text-gray-500">
+                        Nenhum horário disponível para esta data
+                      </div>
+                    ) : (
+                      horariosLivres.map((horario) => (
+                        <SelectItem key={horario} value={horario}>
+                          {horario}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="p-3 border rounded-md bg-gray-50 text-gray-500 text-center">
+                  Selecione uma data primeiro
+                </div>
+              )}
               
               {selectedDate && (
                 <p className="text-sm text-gray-600 mt-2">
                   Data selecionada: {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+                </p>
+              )}
+              
+              {selectedDate && agendamentosExistentes.length > 0 && (
+                <p className="text-xs text-orange-600">
+                  Horários ocupados: {agendamentosExistentes.join(", ")}
                 </p>
               )}
             </div>
@@ -231,7 +383,7 @@ export const AgendamentoModal = ({ open, onOpenChange }: AgendamentoModalProps) 
             <Button 
               type="submit" 
               className="flex-1 bg-gradient-to-r from-yellow-500 to-yellow-600 hover:from-yellow-600 hover:to-yellow-700"
-              disabled={isLoading}
+              disabled={isLoading || !isFormValid()}
             >
               {isLoading ? "Agendando..." : "Confirmar Agendamento"}
             </Button>
